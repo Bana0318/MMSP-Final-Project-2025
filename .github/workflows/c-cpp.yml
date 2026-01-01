@@ -1,0 +1,60 @@
+name: MMSP JPEG Project CI
+
+# 觸發條件：當 push 或 pull request 到 main 分支時執行
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. 下載你的程式碼
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # 2. 安裝 GCC 編譯器與 ImageMagick (用來產生測試圖)
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc imagemagick curl
+
+    # 3. [關鍵步驟] 產生標準測試圖 (強制覆蓋，避免用到壞掉的大圖)
+    # 我們下載 Lena PNG 並轉成 512x512 的標準 BMP (Kimberly.bmp)
+    - name: Prepare Test Image
+      run: |
+        echo "Generating standard test image..."
+        curl -L -o temp_lena.png https://raw.githubusercontent.com/mikolalysenko/lena/master/lena.png
+        # 強制轉為 BMP3 格式，確保 header 是標準的 54 bytes
+        convert temp_lena.png -resize 512x512! -type truecolor BMP3:Kimberly.bmp
+        rm temp_lena.png
+        ls -lh Kimberly.bmp
+
+    # 4. 編譯程式
+    - name: Compile Code
+      run: |
+        gcc encoder.c -o encoder -lm
+        gcc decoder.c -o decoder -lm
+
+    # 5. 賦予腳本執行權限並執行
+    - name: Run Workflow Script
+      run: |
+        chmod +x workflow.sh
+        # 修改 workflow.sh：註解掉原本的下載指令，因為我們在步驟 3 已經準備好圖片了
+        sed -i 's/^curl/#curl/g' workflow.sh
+        # 執行測試
+        ./workflow.sh
+
+    # 6. (選用) 上傳結果圖片，讓你可以下載檢查
+    - name: Upload Output Images
+      if: always() # 即使測試失敗也上傳，方便 Debug
+      uses: actions/upload-artifact@v4
+      with:
+        name: result-images
+        path: |
+          *.bmp
+          *.txt
+          *.bin
